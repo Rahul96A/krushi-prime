@@ -1,0 +1,51 @@
+name: Krushi Prime CI/CD
+
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 8.0.x }
+
+      - name: Build React UI into API wwwroot
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          rm -rf ../backend/src/KrushiPrime.Api/wwwroot && cp -r dist ../backend/src/KrushiPrime.Api/wwwroot
+
+      - name: Test
+        working-directory: backend
+        run: dotnet test -c Release
+
+      - name: Publish
+        working-directory: backend
+        run: dotnet publish src/KrushiPrime.Api/KrushiPrime.Api.csproj -c Release -o ${{ github.workspace }}/publish
+
+      - uses: actions/upload-artifact@v4
+        with: { name: krushiprime, path: publish }
+
+  deploy:
+    needs: build-test
+    # Runs only after you add the AZURE_WEBAPP_NAME variable + AZURE_WEBAPP_PUBLISH_PROFILE secret
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.AZURE_WEBAPP_NAME != ''
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: krushiprime, path: publish }
+      # Secret AZURE_WEBAPP_PUBLISH_PROFILE = Web App → Overview → "Download publish profile"
+      # Variable AZURE_WEBAPP_NAME = output "webAppName" of infra/main.bicep
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: publish

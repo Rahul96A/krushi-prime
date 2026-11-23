@@ -1,0 +1,29 @@
+# Local "production-like" stack: Krushi Prime + SQL Server 2022 (same engine as Azure SQL)
+#   docker compose up --build   →  http://localhost:8080
+services:
+  sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "KrushiPrime#2026"
+    ports: ["1433:1433"]
+    volumes: [sqldata:/var/opt/mssql]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'KrushiPrime#2026' -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      retries: 10
+  app:
+    build: .
+    depends_on:
+      sql: { condition: service_healthy }
+    ports: ["8080:8080"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__Provider: SqlServer
+      ConnectionStrings__Default: "Server=sql,1433;Database=krushiprime;User ID=sa;Password=KrushiPrime#2026;TrustServerCertificate=True;"
+      Jwt__Key: "local-docker-only-key-change-me-0123456789abcdef"
+      Seed__DemoData: "true"
+      Swagger__Enabled: "true"
+      Cors__Origins: "http://localhost:8080"
+volumes:
+  sqldata:
